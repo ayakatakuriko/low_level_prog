@@ -1,24 +1,39 @@
 section .text
 
-exit: 
-    xor rdi, rdi
+exit:
     mov rax, 60
+    xor rdi, rdi
     syscall
 
 string_length:
+    ;引数をrdiから受け取る
     xor rax, rax
 .loop:
     cmp byte [rdi+rax], 0
-    je .end 
+    je .end
     inc rax
-    jmp .loop 
+    jmp .loop
 .end:
     ret
 
+print_string:
+    ;引数をrdiから受け取る
+    xor rax, rax
+    call string_length ;raxに文字列の長さが入る
+    mov rdx, rax ;文字列のバイト数
+    inc rdx
+    mov rsi, rdi;文字列のアドレス
+    mov rdi, 1;stdoutのディスクリプタ
+    mov rax, 1; 'writeのsyscall'
+    syscall
+    ret
+
+
 print_char:
-    push rdi
-    mov rdi, rsp
-    call print_string 
+    ;引数をrdiから受け取る
+    push rdi ;rdi内には文字コードが入っている。writeでほしいのはアドレスなので、スタックに積むことでアドレスを得る。
+    mov rdi, rsp; 書き込むデータの場所
+    call string_length
     pop rdi
     ret
 
@@ -26,203 +41,77 @@ print_newline:
     mov rdi, 10
     jmp print_char
 
-print_string:
-    push rdi
-    call string_length
-    pop rsi
-    mov rdx, rax 
-    mov rax, 1
-    mov rdi, 1 
-    syscall
-    ret
 
 print_uint:
-    mov rax, rdi
-    mov rdi, rsp
-    push 0
-    sub rsp, 16
-    
-    dec rdi
-    mov r8, 10
-
+    mov r9 10
+    xor r10, r10
 .loop:
-    xor rdx, rdx
-    div r8
-    or  dl, 0x30
-    dec rdi 
-    mov [rdi], dl
-    test rax, rax
-    jnz .loop 
-   
-    call print_string
-    
-    add rsp, 24
+    xor rax, rax
+    mov rdx, rdi ;divはrax:rdxをOPで割る
+    div r9
+    mov rdi, rax ;rdiに商を格納
+    add rdx, 0x30 ;文字コードに変換しておく
+    push rdx; あまりをpush
+    inc r10
+    cmp rax, 0
+    je .end1
+    jmp .loop
+.end1:
+    pop rdi
+    dec r10
+    call print_char
+    cmp r10, 0
+    ja .end1
     ret
+
 
 print_int:
-    test rdi, rdi
-    jns print_uint
+    xor rax, rax
+    cmp rdi 0
+    jge .print ;rdiが正の数だった
+    neg rdi ;rdiの符号を反転
     push rdi
-    mov rdi, '-'
+    mov rdi 45 ;-をプリント
     call print_char
     pop rdi
-    neg rdi
+.print:
     jmp print_uint
 
-; returns rax: number, rdx : length
-parse_int:
-    mov al, byte [rdi]
-    cmp al, '-'
-    je .signed
-    jmp parse_uint
-.signed:
-    inc rdi
-    call parse_uint
-    neg rax
-    test rdx, rdx
-    jz .error
-
-    inc rdx
-    ret
-
-    .error:
-    xor rax, rax
-    ret 
-
-; returns rax: number, rdx : length
-parse_uint:
-    mov r8, 10
-    xor rax, rax
-    xor rcx, rcx
-.loop:
-    movzx r9, byte [rdi + rcx] 
-    cmp r9b, '0'
-    jb .end
-    cmp r9b, '9'
-    ja .end
-    xor rdx, rdx 
-    mul r8
-    and r9b, 0x0f
-    add rax, r9
-    inc rcx 
-    jmp .loop 
-    .end:
-    mov rdx, rcx
-    ret
-
 string_equals:
-    mov al, byte [rdi]
-    cmp al, byte [rsi]
-    jne .no
-    inc rdi
-    inc rsi
-    test al, al
-    jnz string_equals
-    mov rax, 1
-    ret
-    .no:
     xor rax, rax
-    ret 
+    ret
 
 
 read_char:
-    push 0
-    xor rax, rax
-    xor rdi, rdi
-    mov rsi, rsp 
+    mov rdi, 0
     mov rdx, 1
     syscall
-    pop rax
-    ret 
+    com rax, -1
+    je .zero
+    mv rdi, rsi
+    call print_char
+    jmp .end
+.zero:
+    mv rdi, 0
+    call print_uint
+.end:
+    ret
 
 read_word:
-    push r14
-    push r15
-    xor r14, r14 
-    mov r15, rsi
-    dec r15
-
-    .A:
-    push rdi
-    call read_char
-    pop rdi
-    cmp al, ' '
-    je .A
-    cmp al, 10
-    je .A
-    cmp al, 13
-    je .A 
-    cmp al, 9 
-    je .A
-    test al, al
-    jz .C
-
-    .B:
-    mov byte [rdi + r14], al
-    inc r14
-
-    push rdi
-    call read_char
-    pop rdi
-    cmp al, ' '
-    je .C
-    cmp al, 10
-    je .C
-    cmp al, 13
-    je .C 
-    cmp al, 9
-    je .C
-    test al, al
-    jz .C
-    cmp r14, r15
-    je .D
-
-    jmp .B
-
-    .C:
-    mov byte [rdi + r14], 0
-    mov rax, rdi 
-   
-    mov rdx, r14 
-    pop r15
-    pop r14
     ret
 
-    .D:
+; rdi points to a string
+; returns rax: number, rdx : length
+parse_uint:
     xor rax, rax
-    pop r15
-    pop r14
     ret
 
-    ; rdi = source
-    ; rsi = dest
-    ; rdx = dest length 
+; rdi points to a string
+; returns rax: number, rdx : length
+parse_int:
+    xor rax, rax
+    ret
+
+
 string_copy:
-
-    push rdi
-    push rsi
-    push rdx
-    call string_length
-    pop rdx
-    pop rsi
-    pop rdi
-
-    cmp rax, rdx
-    jae .too_long  ; we also need to store null-terminator
-    
-    push rsi 
-
-        .loop: 
-        mov dl, byte[rdi]
-        mov byte[rsi], dl
-        inc rdi
-        inc rsi
-        test dl, dl
-        jnz .loop 
-
-    pop rax 
-    ret
-
-    .too_long:
-    xor rax, rax
     ret
